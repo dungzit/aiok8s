@@ -13,6 +13,7 @@ chmod 700 /home/centos/.ssh
 vi /home/centos/.ssh/authorized_keys
 (adding your public key here)
 chmod 400 /home/centos/.ssh/authorized_keys
+chown -R centos:centos /home/centos/.ssh
 echo "centos        ALL=(ALL)       NOPASSWD: ALL" > /etc/sudoers.d/centos
 ```
 
