@@ -9,6 +9,14 @@
       state: stopped
       enabled: no
 
+  - name: disabled SELinux
+    become: true
+    shell: "sed -i --follow-symlinks 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/sysconfig/selinux"
+
+  - name: setenforce 0
+    become: true
+    shell: "setenforce 0"
+
   - name: modprobe br_netfilter
     become: true
     shell: "modprobe br_netfilter"
