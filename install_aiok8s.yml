@@ -1,0 +1,208 @@
+---
+- hosts: aiok8s
+  tasks:
+
+  - name: Stopping Firewalld
+    become: true
+    systemd: 
+      name: firewalld
+      state: stopped
+      enabled: no
+
+  - name: modprobe br_netfilter
+    become: true
+    shell: "modprobe br_netfilter"
+
+  - name: Enabling Bridge Firewall Rule in /etc/sysctl.conf
+    become: true
+    shell: "echo 'net.bridge.bridge-nf-call-iptables=1' >> /etc/sysctl.conf"
+
+  - name: Set local port range 1024 65535 in /etc/sysctl.conf
+    become: true
+    shell: "echo 'net.ipv4.ip_local_port_range = 1024 65535' >> /etc/sysctl.conf"
+ 
+  - name: Set file-max 5000000 in /etc/sysctl.conf
+    become: true
+    shell: "echo 'fs.file-max = 5000000' >> /etc/sysctl.conf"
+ 
+  - name: Set somaxconn 500 in /etc/sysctl.conf
+    become: true
+    shell: "echo 'net.core.somaxconn = 500' >> /etc/sysctl.conf"
+ 
+  - name: Set * soft nproc 65535 in /etc/security/limits.conf
+    become: true
+    shell: "echo '* soft nproc 65535' >> /etc/security/limits.conf"
+
+  - name: Set * hard nproc 65535 in /etc/security/limits.conf
+    become: true
+    shell: "echo '* hard nproc 65535' >> /etc/security/limits.conf"
+
+  - name: Set * soft nofile 65535 in /etc/security/limits.conf
+    become: true
+    shell: "echo '* soft nofile 65535' >> /etc/security/limits.conf"
+
+  - name: Set * hard nofile 65535 in /etc/security/limits.conf
+    become: true
+    shell: "echo '* hard nofile 65535' >> /etc/security/limits.conf"
+
+  - name: Calling sysctl -p
+    become: true
+    shell: "sysctl -p"
+
+  - name: dnf config for docker repo
+    become: true
+    shell: "dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo"
+
+  - name: dnf containerd
+    become: true
+    dnf:
+      name: https://download.docker.com/linux/centos/7/x86_64/stable/Packages/containerd.io-1.2.6-3.3.el7.x86_64.rpm
+      state: present
+
+  - name: dnf install iproute-tc
+    become: true
+    dnf:
+      name: iproute-tc
+      state: present
+
+  - name: dnf install docker 
+    become: true
+    dnf:
+      name: docker-ce
+      state: present
+  - name: emptying docker.service file
+    become: true
+    shell: "echo '' > /usr/lib/systemd/system/docker.service"
+
+  - name: modify docker.service file
+    become: true
+    blockinfile:
+      path: /usr/lib/systemd/system/docker.service
+      block: |
+       [Unit]
+       Description=Docker Application Container Engine
+       Documentation=https://docs.docker.com
+       BindsTo=containerd.service
+       After=network-online.target firewalld.service containerd.service
+       Wants=network-online.target
+       Requires=docker.socket
+       
+       [Service]
+       Type=notify
+       ExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock --exec-opt native.cgroupdriver=systemd
+       ExecReload=/bin/kill -s HUP $MAINPID
+       TimeoutSec=0
+       RestartSec=2
+       Restart=always
+       StartLimitBurst=3
+       StartLimitInterval=60s
+       LimitNOFILE=infinity
+       LimitNPROC=infinity
+       LimitCORE=infinity
+       TasksMax=infinity
+       Delegate=yes
+       KillMode=process
+       
+       [Install]
+       WantedBy=multi-user.target
+
+  - name: Reload daemon enable docker service and start it
+    become: true
+    systemd: 
+      name: docker
+      state: started
+      enabled: yes
+      daemon_reload: yes
+ 
+  - name: Creating a repository file for Kubernetes
+    become: true
+    file:
+     path: /etc/yum.repos.d/kubernetes.repo
+     state: touch
+
+  - name: Adding repository details in Kubernetes repo file.
+    become: true
+    blockinfile:
+     path: /etc/yum.repos.d/kubernetes.repo
+     block: |
+      [kubernetes]
+      name=Kubernetes
+      baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+      enabled=1
+      gpgcheck=1
+      repo_gpgcheck=1
+      gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg
+        https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+
+  - name: dnf install kubeadm
+    become: true
+    dnf:
+      name: kubeadm
+      state: present
+
+  - name: Pulling images required for setting up a Kubernetes cluster
+    become: true
+    shell: "kubeadm config images pull"
+
+  - name: Starting kubelet
+    become: true
+    systemd: 
+      name: kubelet
+      state: started
+      enabled: yes
+
+  - name: Running kubeadm init
+    become: true
+    shell: "kubeadm init"
+
+  - name: Copying required files
+    shell: |
+     mkdir -p /home/centos/.kube
+     sudo cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
+     sudo chown $(id -u):$(id -g) /home/centos/.kube/config
+
+  - name: Taint the master node
+    shell: "kubectl taint nodes --all node-role.kubernetes.io/master-"
+
+  - name: Installing networking plugin (Weave)
+    shell: kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
+
+  - name: Deploying the dashboard
+    shell: "kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.3/aio/deploy/recommended.yaml"
+
+ - name: Creating admin-user.yml
+    blockinfile:
+     path: /home/centos/admin-user.yml
+     create: yes
+     block: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: admin-user
+        namespace: kube-system
+ 
+  - name: Creating clusterRoleBinding.yml
+    blockinfile:
+     path: /home/centos/clusterRoleBinding.yml
+     create: yes
+     block: |
+      apiVersion: rbac.authorization.k8s.io/v1beta1
+      kind: ClusterRoleBinding
+      metadata:
+        name: admin-user
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: cluster-admin
+      subjects:
+      - kind: ServiceAccount
+        name: admin-user
+        namespace: kube-system 
+
+  - name: Creating admin user 
+    shell: kubectl apply -f /home/centos/admin-user.yml
+
+  - name: Creating clusterRoleBinding
+    shell: kubectl apply -f /home/centos/clusterRoleBinding.yml
+
+
