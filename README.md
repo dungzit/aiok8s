@@ -28,5 +28,5 @@ ansible-playbook install_aiok8s.yml
 ```
 If you like to install an offline aiok8s system:
 ```
-ansible-playbook install_aiok8s.yml
+ansible-playbook offline_install_aiok8s.yml
 ```
