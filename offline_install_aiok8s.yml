@@ -56,7 +56,7 @@
 
   - name: Installing rpm files
     become: true
-    shell: "rpm -i /home/centos/binary/*.rpm"
+    shell: "rpm -i --force /home/centos/binary/*.rpm"
 
   - name: emptying docker.service file
     become: true
